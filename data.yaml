@@ -1,0 +1,14 @@
+names:
+- Perumahan
+- Sawah
+- Sungai
+nc: 3
+roboflow:
+  license: CC BY 4.0
+  project: deteksi-luas-lahan
+  url: https://universe.roboflow.com/ta-mobile-security/deteksi-luas-lahan/dataset/7
+  version: 7
+  workspace: ta-mobile-security
+test: ../test/images
+train: ../train/images
+val: ../valid/images

@@ -23,7 +23,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    YAML::Node config = YAML::LoadFile("/home/ramailham/yolov8_detection/yoloNormal.yaml");
+    YAML::Node config = YAML::LoadFile("../yoloNormal.yaml");
     int m_size = config["size"].as<int>();
     std::string model_path = config["model"].as<std::string>();
     std::string yaml_path = "/home/ramailham/yolov8_detection/data.yaml";
@@ -46,27 +46,22 @@ int main(int argc, char **argv)
             putText(frame, detection.className, Point(detection.box.x, detection.box.y - 10),
                     FONT_HERSHEY_SIMPLEX, 0.6, Scalar(0, 0, 255), 2);
 
-            // Jika mask tersedia, gambarkan di atas gambar
             if (!detection.mask.empty())
             {
                 cv::Mat mask_resized;
                 cv::resize(detection.mask, mask_resized, detection.box.size());
 
-                // 🔴 Pastikan mask dikonversi ke format CV_8UC1 (8-bit grayscale)
                 cv::Mat mask_uint8;
-                mask_resized.convertTo(mask_uint8, CV_8UC1, 255); // Normalisasi ke 0-255
+                mask_resized.convertTo(mask_uint8, CV_8UC1, 255); 
 
-                // 🔵 Gunakan colormap untuk menampilkan mask dengan warna
                 cv::Mat coloredMask;
                 applyColorMap(mask_uint8, coloredMask, cv::COLORMAP_JET);
 
-                // 🛠 Perbaikan: Cegah bounding box keluar dari batas gambar
                 int x = std::max(0, detection.box.x);
                 int y = std::max(0, detection.box.y);
                 int width = std::min(frame.cols - x, detection.box.width);
                 int height = std::min(frame.rows - y, detection.box.height);
 
-                // Jika width atau height negatif, lewati iterasi ini
                 if (width <= 0 || height <= 0)
                     continue;
 

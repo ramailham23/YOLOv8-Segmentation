@@ -1,2 +1,2 @@
-model: "../Models/best.onnx"  # Path ke model YOLOv8 dalam format ONNX
-size: 640           # Ukuran input model (default YOLOv8 adalah 640x640)
+model: "../Models/best.onnx"
+size: 640        

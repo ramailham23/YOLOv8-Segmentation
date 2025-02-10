@@ -128,7 +128,6 @@ std::vector<Detection> Inference::runInference(const cv::Mat &input)
                 int mask_size = std::sqrt(mask_dim);
                 cv::Mat mask(mask_size, mask_size, CV_32FC1, mask_data);
                 
-                // Normalisasi mask ke [0,255] dan konversi ke 8-bit grayscale
                 cv::normalize(mask, mask, 0, 255, cv::NORM_MINMAX);
                 mask.convertTo(mask, CV_8UC1);
                 
@@ -138,7 +137,6 @@ std::vector<Detection> Inference::runInference(const cv::Mat &input)
         data += dimensions;
     }
 
-    // 🔹 Terapkan Non-Maximum Suppression (NMS) untuk menghapus duplikasi
     std::vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, modelScoreThreshold, 0.45, indices);
 

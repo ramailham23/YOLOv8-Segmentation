@@ -1,2 +1,2 @@
-model: "/home/ramailham/yolov8_detection/Models/best (1).onnx"  # Path ke model YOLOv8 dalam format ONNX
+model: "../Models/best.onnx"  # Path ke model YOLOv8 dalam format ONNX
 size: 640           # Ukuran input model (default YOLOv8 adalah 640x640)

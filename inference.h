@@ -45,4 +45,4 @@ private:
     cv::dnn::Net net;
 };
 
-#endif
+#endif // INFERENCE_H

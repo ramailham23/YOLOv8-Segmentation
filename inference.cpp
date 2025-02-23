@@ -1,161 +1,101 @@
 #include "inference.h"
+#include <opencv2/opencv.hpp>
+#include <opencv2/dnn.hpp>
+#include <iostream>
+#include <vector>
+#include <string>
 
-Inference::Inference(const std::string &onnxModelPath, const cv::Size &modelInputShape, const std::string &yamlFilePath, const bool &runWithCuda)
-{
-    modelPath = onnxModelPath;
-    modelShape = modelInputShape;
-    yamlPath = yamlFilePath;
-    cudaEnabled = runWithCuda;
+using namespace cv;
+using namespace dnn;
+using namespace std;
 
-    loadOnnxNetwork();
+// Warna untuk segmentasi
+Scalar colors[] = {
+    Scalar(0, 0, 255),   // Red (Sawah)
+    Scalar(255, 0, 0),   // Blue (Perumahan)
+    Scalar(0, 255, 0)    // Green (Sungai)
+};
+
+Inference::Inference(const std::string &onnxModelPath, const cv::Size &modelInputShape,
+    const std::string &yamlPath, const bool &runWithCuda)
+: modelPath(onnxModelPath), yamlPath(yamlPath), cudaEnabled(runWithCuda), modelShape(modelInputShape) {
     loadClassesFromYAML();
+    loadOnnxNetwork();
 }
 
-void Inference::loadClassesFromYAML()
-{
-    try {
-        YAML::Node config = YAML::LoadFile(yamlPath);
-        if (config["names"])
-        {
-            for (const auto &name : config["names"])
-            {
-                classes.push_back(name.as<std::string>());
-            }
+void Inference::loadClassesFromYAML() {
+    YAML::Node config = YAML::LoadFile(yamlPath);
+    if (config["names"]) {
+        for (const auto &name : config["names"]) {
+            classes.push_back(name.as<string>());
         }
-        else
-        {
-            std::cerr << "⚠️ Warning: Tidak menemukan 'names' di data.yaml! Pastikan file YAML benar. \n";
-        }
-    } catch (const YAML::Exception &e) {
-        std::cerr << "❌ Error membaca data.yaml: " << e.what() << std::endl;
-        exit(EXIT_FAILURE);
+    } else {
+        cerr << "❌ Error: Tidak dapat membaca kelas dari " << yamlPath << endl;
     }
 }
 
-void Inference::loadOnnxNetwork()
-{
-    net = cv::dnn::readNetFromONNX(modelPath);
-    if (cudaEnabled)
-    {
-        std::cout << "\n🚀 Running on CUDA" << std::endl;
-        net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
-        net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+void Inference::loadOnnxNetwork() {
+    net = readNet(modelPath);
+    if (net.empty()) {
+        cerr << "❌ Error: Model gagal dimuat! Periksa path ke model." << endl;
+        return;
     }
-    else
-    {
-        std::cout << "\n💻 Running on CPU" << std::endl;
-        net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-        net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+
+    if (cudaEnabled) {
+        net.setPreferableBackend(DNN_BACKEND_CUDA);
+        net.setPreferableTarget(DNN_TARGET_CUDA);
+    } else {
+        net.setPreferableBackend(DNN_BACKEND_DEFAULT);
+        net.setPreferableTarget(DNN_TARGET_CPU);
     }
 }
 
-cv::Mat Inference::formatToSquare(const cv::Mat &source)
-{
-    int col = source.cols;
-    int row = source.rows;
-    int _max = std::max(col, row);
-    cv::Mat result = cv::Mat::zeros(_max, _max, CV_8UC3);
-    source.copyTo(result(cv::Rect(0, 0, col, row)));
-    return result;
-}
-
-std::vector<Detection> Inference::runInference(const cv::Mat &input)
-{
-    cv::Mat modelInput = input;
-    if (letterBoxForSquare && modelShape.width == modelShape.height)
-        modelInput = formatToSquare(modelInput);
-
-    cv::Mat blob;
-    cv::dnn::blobFromImage(modelInput, blob, 1.0 / 255.0, modelShape, cv::Scalar(), true, false);
+vector<Detection> Inference::runInference(const Mat &input) {
+    vector<Detection> detections;
+    Mat blob;
+    blobFromImage(input, blob, 1.0 / 255.0, modelShape, Scalar(), false, true);
     net.setInput(blob);
 
-    std::vector<cv::Mat> outputs;
+    vector<Mat> outputs;
+    vector<String> outputNames = net.getUnconnectedOutLayersNames();
+    cout << "Output Layers dari Model: " << endl;
+    for (const auto &name : outputNames) {
+        cout << " - " << name << endl;
+    }
+
     net.forward(outputs, net.getUnconnectedOutLayersNames());
+    cout << "✅ Model berhasil melakukan inferensi!" << endl;
+    cout << "Dimensi Output0 (deteksi): " << outputs[0].size << endl;
+    cout << "Dimensi Output1 (segmentasi): " << outputs[1].size << endl;
 
-    int rows = outputs[0].size[1];
-    int dimensions = outputs[0].size[2];
+    Mat detectionMat = outputs[0];
+    Mat maskMat = outputs[1];
 
-    bool yolov8 = false;
-    if (dimensions > rows)
-    {
-        yolov8 = true;
-        rows = outputs[0].size[2];
-        dimensions = outputs[0].size[1];
+    float confThreshold = 0.2;
+    for (int i = 0; i < detectionMat.rows; i++) {
+        float confidence = detectionMat.at<float>(i, 4);
+        if (confidence > confThreshold) {
+            int classId = (int)detectionMat.at<float>(i, 5);
+            int x = (int)(detectionMat.at<float>(i, 0) * input.cols);
+            int y = (int)(detectionMat.at<float>(i, 1) * input.rows);
+            int w = (int)(detectionMat.at<float>(i, 2) * input.cols);
+            int h = (int)(detectionMat.at<float>(i, 3) * input.rows);
 
-        outputs[0] = outputs[0].reshape(1, dimensions);
-        cv::transpose(outputs[0], outputs[0]);
-    }
-    float *data = (float *)outputs[0].data;
+            Detection detection;
+            detection.class_id = classId;
+            detection.className = classes[classId];
+            detection.confidence = confidence;
+            detection.box = Rect(x, y, w, h);
+            detection.color = colors[classId];
 
-    float x_factor = modelInput.cols / modelShape.width;
-    float y_factor = modelInput.rows / modelShape.height;
+            // Mask segmentation
+            Mat mask = maskMat.row(i).reshape(1, 160);
+            resize(mask, mask, Size(w, h));
+            threshold(mask, mask, 0.5, 255, THRESH_BINARY);
+            detection.mask = mask;
 
-    std::vector<int> class_ids;
-    std::vector<float> confidences;
-    std::vector<cv::Rect> boxes;
-    std::vector<cv::Mat> masks;
-
-    int mask_dim = dimensions - (yolov8 ? 4 : 5) - classes.size();
-
-    for (int i = 0; i < rows; ++i)
-    {
-        float *classes_scores = yolov8 ? (data + 4) : (data + 5);
-        cv::Mat scores(1, classes.size(), CV_32FC1, classes_scores);
-        cv::Point class_id;
-        double maxClassScore;
-        minMaxLoc(scores, 0, &maxClassScore, 0, &class_id);
-
-        if (maxClassScore > modelScoreThreshold)
-        {
-            confidences.push_back(maxClassScore);
-            class_ids.push_back(class_id.x);
-
-            float x = data[0];
-            float y = data[1];
-            float w = data[2];
-            float h = data[3];
-
-            int left = int((x - 0.5 * w) * x_factor);
-            int top = int((y - 0.5 * h) * y_factor);
-            int width = int(w * x_factor);
-            int height = int(h * y_factor);
-
-            boxes.push_back(cv::Rect(left, top, width, height));
-
-            if (mask_dim > 0)
-            {
-                float *mask_data = data + (yolov8 ? 4 : 5) + classes.size();
-                int mask_size = std::sqrt(mask_dim);
-                cv::Mat mask(mask_size, mask_size, CV_32FC1, mask_data);
-                
-                cv::normalize(mask, mask, 0, 255, cv::NORM_MINMAX);
-                mask.convertTo(mask, CV_8UC1);
-                
-                masks.push_back(mask.clone());
-            }
+            detections.push_back(detection);
         }
-        data += dimensions;
     }
-
-    std::vector<int> indices;
-    cv::dnn::NMSBoxes(boxes, confidences, modelScoreThreshold, 0.45, indices);
-
-    std::vector<Detection> detections;
-    for (size_t i = 0; i < indices.size(); i++)
-    {
-        int idx = indices[i];
-
-        Detection result;
-        result.class_id = class_ids[idx];
-        result.confidence = confidences[idx];
-
-        result.color = cv::Scalar(rand() % 255, rand() % 255, rand() % 255);
-        result.className = classes[result.class_id];
-        result.box = boxes[idx];
-        result.mask = masks[idx];
-
-        detections.push_back(result);
-    }
-
     return detections;
 }

@@ -32,7 +32,7 @@ YOLOv8-Detection/
 
 ## 🔧 **2. Installation Guide**
 1. Clone The Repository:
-git clone https://github.com/ramailham23/yolov8-detection.git
+https://github.com/ramailham23/YOLOv8-Segmentation.git
 cd yolov8-detection
 
 2. Install Dependencies:
